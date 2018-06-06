@@ -26,16 +26,31 @@
 #define num_chairs 7
 
 /* Mutex e Variáveis globais*/
-/* Região crítica da variável waiting */
-pthread_mutex_t sem_exc_aces;
+/* Região crítica*/
+pthread_mutex_t sem_exc_aces1;
+pthread_mutex_t sem_exc_aces2;
 // Semáforos
 sem_t sem_customers;
 sem_t sem_barber;
+
+typedef struct{
+  char* stringEmbaralhada;
+  int numCliente;
+  unsigned int tam;
+} mensChair;
+
+typedef struct{
+  char* stringPronta;
+  int numCliente;
+} mensAfter;
 
 /* Fila de espera, sempre será menor que num_chairs */
 int waiting = 0;
 /* Quantos foram atendidos (e sairam da loja) */
 int left = 0;
+/* Filas */
+struct mensChair *filaMensagem;
+struct mensAfter *prontaMensagem;
 
 //Protótipos
 void cut_hair(int num);
@@ -52,8 +67,12 @@ int main(){
   int numeroClientes[num_clients];
 
   /*INICIAR MUTEX*/
-  if(pthread_mutex_init(&sem_exc_aces, NULL)){
-    fprintf(stderr, "Erro ao inicializar mutex exc_aces\n");
+  if(pthread_mutex_init(&sem_exc_aces1, NULL)){
+    fprintf(stderr, "Erro ao inicializar mutex exc_aces1\n");
+    return -1;
+  }
+  if(pthread_mutex_init(&sem_exc_aces2, NULL)){
+    fprintf(stderr, "Erro ao inicializar mutex exc_aces2\n");
     return -1;
   }
   if(sem_init(&sem_customers,0,0)){
@@ -98,8 +117,12 @@ int main(){
   }
 
   //Destruindo MUTEX
-  if(pthread_mutex_destroy(&sem_exc_aces)){
-    fprintf(stderr, "Erro ao tentar destruir mutex exc_aces\n");
+  if(pthread_mutex_destroy(&sem_exc_aces1)){
+    fprintf(stderr, "Erro ao tentar destruir mutex exc_aces1\n");
+    return -1;
+  }
+  if(pthread_mutex_destroy(&sem_exc_aces2)){
+    fprintf(stderr, "Erro ao tentar destruir mutex exc_aces2\n");
     return -1;
   }
   if(sem_destroy(&sem_customers)){
@@ -146,17 +169,17 @@ void *clientThread(void *arg){
       sem_post(&sem_customers);
       sem_wait(&sem_barber);
       //TRAVAR AQUI PARA ORDENACAO
+
       apreciate_hair(i, whichBarber, tempoIncio);
       left++;
       atendido = 1;
 
     } else {
 
-      printf("Cliente %i saindo para sorvete\n", i);
+      //printf("Cliente %i saindo para sorvete\n", i);
       usleep(50);
     }
   } // Fim do while Atendido
-
 
   pthread_exit(NULL);
 }
@@ -164,6 +187,7 @@ void *clientThread(void *arg){
 //Procedimento para cortar o cabelo
 void cut_hair(int num){
   //TRAVAR PARA ORDENAR
+  //printf("%d Cortando cabelo\n", num);
   usleep(500);
 }
 
