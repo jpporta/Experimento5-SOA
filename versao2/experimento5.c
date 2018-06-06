@@ -33,6 +33,7 @@ sem_t sem_customers;
 sem_t sem_barber1;
 sem_t sem_barber2;
 sem_t sem_barber3;
+sem_t printApp;
 
 /* Fila de espera, sempre será menor que num_chairs */
 int waiting = 0;
@@ -41,7 +42,7 @@ int left = 0;
 
 //Protótipos
 void cut_hair(int num);
-void apreciate_hair(int num, int numBarbeiro);
+void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio);
 void *barberThread(void *arg);
 void *clientThread(void *arg);
 
@@ -74,6 +75,10 @@ int main(){
     fprintf(stderr, "Erro ao inicializar semaphore barber3\n");
     return -1;
   }
+  if(sem_init(&printApp,0,1)){
+    fprintf(stderr, "Erro ao inicializar semaphore para print\n");
+    return -1;
+  }
 
   //Disparando barbeiros
   for(int i = 0; i < num_barbers;i++){
@@ -93,18 +98,17 @@ int main(){
     }
   }
 
-
   //Espera clientes e barbeiros
+  for(int i = 0; i < num_barbers; i++){
+    if(pthread_join(barbers[i],NULL)){
+      fprintf(stderr, "Erro ao esperar Barbeiro %d\n", i+1);
+      return -1;
+    }
+  }
   for(int i = 0; i < num_clients; i++){
     if(pthread_join(clients[i], NULL)){
       fprintf(stderr, "Erro ao esperar cliente %d\n", i);
       return -1;
-    }
-    if(i < num_barbers){
-      if(pthread_join(barbers[i],NULL)){
-        fprintf(stderr, "Erro ao esperar Barbeiro %d\n", i+1);
-        return -1;
-      }
     }
   }
 
@@ -118,15 +122,19 @@ int main(){
     return -1;
   }
   if(sem_destroy(&sem_barber1)){
-    fprintf(stderr, "Erro ao tentar destruir mutex barber1\n");
+    fprintf(stderr, "Erro ao tentar destruir semaphore barber1\n");
     return -1;
   }
   if(sem_destroy(&sem_barber2)){
-    fprintf(stderr, "Erro ao tentar destruir mutex barber2\n");
+    fprintf(stderr, "Erro ao tentar destruir semaphore barber2\n");
     return -1;
   }
   if(sem_destroy(&sem_barber3)){
-    fprintf(stderr, "Erro ao tentar destruir mutex barber3\n");
+    fprintf(stderr, "Erro ao tentar destruir semaphore barber3\n");
+    return -1;
+  }
+  if(sem_destroy(&printApp)){
+    fprintf(stderr, "Erro ao tentar destruir semaphore para print\n");
     return -1;
   }
 
@@ -139,7 +147,6 @@ void *barberThread(void *arg){
   int i = *(int *)arg;
 
   switch(i){
-            //pthread_mutex_lock(&sem_customers);
     case 1:
       while(left<27){
 
@@ -186,7 +193,9 @@ void *clientThread(void *arg){
   int i = *(int *)arg;
   int whichBarber = 0;
   int atendido = 0;
+  struct timeval tempoIncio;
 
+  gettimeofday(&tempoIncio, NULL);
   while(!atendido){
 
     pthread_mutex_lock(&sem_exc_aces);
@@ -211,17 +220,19 @@ void *clientThread(void *arg){
           whichBarber = 3;
           break;
         }
-        usleep(50);
       }
 
-      apreciate_hair(i, whichBarber);
+       sem_wait(&printApp);
+       apreciate_hair(i, whichBarber, tempoIncio);
+       sem_post(&printApp);
+
       atendido = 1;
 
     } else{
 
       //printf("Cliente %i saindo\n", i);
       pthread_mutex_unlock(&sem_exc_aces);
-      //usleep(50);
+      usleep(50);
     }
   } // Fim do while Atendido
 
@@ -232,11 +243,16 @@ void *clientThread(void *arg){
 //Procedimento para cortar o cabelo
 void cut_hair(int num){
   //printf("Barbeiro %i cortando o cabelo\n", num);
-  usleep(50);
+  usleep(500);
 }
 
 //Procedimento para apreciar o cabelo
-void apreciate_hair(int num, int numBarbeiro){
-  printf("Cliente %i está apreciando o cabelo cortado pelo barbeiro %d\n", num, numBarbeiro);
-  usleep(50);
+void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio){
+  struct timeval tempoFim;
+  double tempoAtendimento;
+  gettimeofday(&tempoFim, NULL);
+
+  tempoAtendimento = tempoFim.tv_sec - tempoIncio.tv_sec;
+  tempoAtendimento += (tempoFim.tv_usec - tempoIncio.tv_usec)/(float)1000;
+  printf("Cliente %i\t\tBarbeiro %d\t\tTemp - %lf (ms)\n", num, numBarbeiro, tempoAtendimento);
 }
