@@ -27,7 +27,9 @@
 
 /* Mutex e Variáveis globais*/
 /* Região crítica*/
+//Para struct mensChair
 pthread_mutex_t sem_exc_aces1;
+//Para struct mensAfter
 pthread_mutex_t sem_exc_aces2;
 // Semáforos
 sem_t sem_customers;
@@ -57,6 +59,13 @@ void cut_hair(int num);
 void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio);
 void *barberThread(void *arg);
 void *clientThread(void *arg);
+/* Protótipos para manipulação de lista ligada */
+void criaVaziaEmb(struct mensChair **ponteiro);
+int insereEmb(struct mensChair **source, struct mensChair *novo);
+void criaVaziaOrd(struct mensAfter **ponteiro);
+int insereOrd(stuct mensAfter **source, struct mensAfter *new);
+
+
 
 /*A função da main é apenas criar as threads (clientes e barbeiros),
 iniciar mutex, esperar threads e destuir mutex*/
@@ -65,6 +74,7 @@ int main(){
   pthread_t clients[num_clients];
   int numeroBarbeiros[num_barbers];
   int numeroClientes[num_clients];
+
 
   /*INICIAR MUTEX*/
   if(pthread_mutex_init(&sem_exc_aces1, NULL)){
@@ -154,9 +164,21 @@ void *barberThread(void *arg){
 void *clientThread(void *arg){
 
   int i = *(int *)arg;
-  int whichBarber = 0;
+  int loopCounter = 0;
   int atendido = 0;
   struct timeval tempoIncio;
+  /* SETANDO STRUCT PARA COLOCAR NA LISTA */
+  struct mensChair *atual = malloc(sizeof(struct mensChair));
+
+  atual->tam = (rand() % 1021) + 2);
+  atual->numCliente = i;
+
+  char strEmbaralhada[atual.tam];
+  char strOrdenada[atual.tam];
+
+  getRandomString(&strEmbaralhada,atual.tam);
+  atual->stringEmbaralhada = &strEmbaralhada;
+  /* FINAL SETUP */
 
   gettimeofday(&tempoIncio, NULL);
 
@@ -200,4 +222,74 @@ void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio){
   tempoAtendimento = tempoFim.tv_sec - tempoIncio.tv_sec;
   tempoAtendimento += (tempoFim.tv_usec - tempoIncio.tv_usec)/(float)1000;
   printf("Cliente %i\t\tBarbeiro %d\t\tTemp - %lf (ms)\n", num, numBarbeiro, tempoAtendimento);
+}
+
+void criaVaziaEmb(struct mensChair **ponteiro){
+  *ponteiro = NULL;
+}
+int insereEmb(struct mensChair **source, struct mensChair *novo){
+  //Struct auxiliar
+  mensChair *aux;
+  //Contador de quantos elementos tem na lista
+  count = 1;
+
+  //Caso exista o 1 elemento da lista
+  if(*source){
+    //Utiliza a struct auxiliar para andar
+    aux = *source;
+    //Enquanto não chegar no final
+    while(aux->prox){
+      //Anda
+      aux = aux->prox;
+      //Contador ++
+      count++;
+    }
+    //Se tiver menos elementos que o numero de cadeiras, adiciona
+    if(count < num_chairs){
+      aux->prox = novo;
+      return 1;
+    } else {
+      //Se não, vai ficar esperando
+      return 0;
+    }
+  } else {
+    //Caso não tenha elemento, é adicionado como o primeiro elemento
+    *source = novo;
+    return = 1;
+  }
+
+}
+void criaVaziaOrd(struct mensAfter **ponteiro){
+  *ponteiro = NULL;
+}
+int insereOrd(stuct mensAfter **source, struct mensAfter *new){
+  //Struct auxiliar
+  mensAfter *aux;
+  //Contador de quantos elementos tem na lista
+  count = 1;
+
+  //Caso exista o 1 elemento da lista
+  if(*source){
+    //Utiliza a struct auxiliar para andar
+    aux = *source;
+    //Enquanto não chegar no final
+    while(aux->prox){
+      //Anda
+      aux = aux->prox;
+      //Contador ++
+      count++;
+    }
+    //Se tiver menos elementos que o numero de barbeiros, adiciona
+    if(count < num_barbers){
+      aux->prox = new;
+      return 1;
+    } else {
+      //Se não, vai ficar esperando
+      return 0;
+    }
+  } else {
+    //Caso não tenha elemento, é adicionado como o primeiro elemento
+    *source = new;
+    return = 1;
+  }
 }
