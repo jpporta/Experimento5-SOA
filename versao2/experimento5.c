@@ -20,10 +20,13 @@
 #include <unistd.h>
 //temp
 #include <sys/types.h>
+#include <string.h>
+#include <time.h>
 
 #define num_barbers 3
 #define num_clients 27
 #define num_chairs 7
+#define MAXSIZEVECTOR 5115
 
 /* Mutex e Variáveis globais*/
 /* Região crítica*/
@@ -35,15 +38,18 @@ pthread_mutex_t sem_exc_aces2;
 sem_t sem_customers;
 sem_t sem_barber;
 
-typedef struct{
+typedef struct mensChair{
   char* stringEmbaralhada;
   int numCliente;
   unsigned int tam;
+  struct mensChair *prox;
 } mensChair;
 
-typedef struct{
+typedef struct mensAfter{
   char* stringPronta;
+  int numBarber;
   int numCliente;
+  struct mensAfter *prox;
 } mensAfter;
 
 /* Fila de espera, sempre será menor que num_chairs */
@@ -55,15 +61,22 @@ struct mensChair *filaMensagem;
 struct mensAfter *prontaMensagem;
 
 //Protótipos
-void cut_hair(int num);
-void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio);
+void cut_hair(int num, struct mensChair *notReady, struct mensAfter *ready);
+void apreciate_hair(int num, struct timeval tempoIncio, struct mensChair *structVelha, struct mensAfter *structNova);
 void *barberThread(void *arg);
 void *clientThread(void *arg);
 /* Protótipos para manipulação de lista ligada */
 void criaVaziaEmb(struct mensChair **ponteiro);
-int insereEmb(struct mensChair **source, struct mensChair *novo);
+void insereEmb(struct mensChair **source, struct mensChair *novo);
 void criaVaziaOrd(struct mensAfter **ponteiro);
-int insereOrd(stuct mensAfter **source, struct mensAfter *new);
+void insereOrd(struct mensAfter **source, struct mensAfter *new);
+void retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente);
+// Prototipos para a srting
+void vetorAleatorio(int tam, int *vetor);
+void vetorToString (int tam, char *stringRet, int* vetor);
+void stringToVetor(int *vetor, char* string);
+int comparator(const void *p, const void *q);
+
 
 
 
@@ -74,6 +87,7 @@ int main(){
   pthread_t clients[num_clients];
   int numeroBarbeiros[num_barbers];
   int numeroClientes[num_clients];
+
 
 
   /*INICIAR MUTEX*/
@@ -93,6 +107,10 @@ int main(){
     fprintf(stderr, "Erro ao inicializar semaphore barber\n");
     return -1;
   }
+
+  //Inicializando Listas Ordenadas
+  criaVaziaEmb(&filaMensagem);
+  criaVaziaOrd(&prontaMensagem);
 
   //Disparando barbeiros
   for(int i = 0; i < num_barbers;i++){
@@ -149,89 +167,148 @@ int main(){
 
 //Procedimento que as threads Barbeiros irão executar
 void *barberThread(void *arg){
-
+  //Número do Barbeiro
   int i = *(int *)arg;
-  while(left < 27){
+  //Struct com a string ordenada
+  struct mensAfter *strReady = (struct mensAfter *) malloc(sizeof(struct mensAfter));
+  //Struct com a string embaralhada
+  struct mensChair *strNotReady = (struct mensChair *)malloc(sizeof(struct mensChair));
+
+  //Loop para o barbeiro esperar todos serem atendidos
+  while(left < num_clients){
+    //Espera algum cliente entrar na fila
     sem_wait(&sem_customers);
-    cut_hair(i);
+    //Acesso à região crítica
+    pthread_mutex_lock(&sem_exc_aces1);
+    //Pega o primeiro da fila
+    strNotReady = filaMensagem;
+    //Anda a fila
+    filaMensagem = strNotReady->prox;
+    //Libera região crítica
+    pthread_mutex_unlock(&sem_exc_aces1);
+    //Corta o cabelo
+    cut_hair(i, strNotReady, strReady);
+    //Acesso à 2 região crítica
+    pthread_mutex_lock(&sem_exc_aces2);
+    //Insere na fila prontos
+    insereOrd(&prontaMensagem,strReady);
+    //Libera região crítica
+    pthread_mutex_unlock(&sem_exc_aces2);
+    //Libera barbeiro
     sem_post(&sem_barber);
   }
 
+  //Sai da thread
   pthread_exit(NULL);
 }
 
 //Procedimento que as threads Clientes irão executar
 void *clientThread(void *arg){
-
+  char stringZona[MAXSIZEVECTOR];
+  //Numero do cliente
   int i = *(int *)arg;
-  int loopCounter = 0;
+  //Condição para LOOP
   int atendido = 0;
+  //Para cálculo de tempo
   struct timeval tempoIncio;
+  /* Setando struct para tirar da lista 2 */
+  struct mensAfter *final = (struct mensAfter *)malloc(sizeof(struct mensAfter));
   /* SETANDO STRUCT PARA COLOCAR NA LISTA */
-  struct mensChair *atual = malloc(sizeof(struct mensChair));
-
-  atual->tam = (rand() % 1021) + 2);
+  //Aloca struct
+  struct mensChair *atual = (struct mensChair *)malloc(sizeof(struct mensChair));
+  //O tamanho aleatorio da string
+  atual->tam = ((rand() % 1021) + 2);
+  //Passa o numero do cliente
   atual->numCliente = i;
-
-  char strEmbaralhada[atual.tam];
-  char strOrdenada[atual.tam];
-
-  getRandomString(&strEmbaralhada,atual.tam);
-  atual->stringEmbaralhada = &strEmbaralhada;
+  //Declara a string embaralhada e ordenada
+  char strEmbaralhada[atual->tam];
+  //Gera a string aleatoria
+  //getRandomString(&strEmbaralhada,atual->tam);
+  vetorAleatorio(atual->tam, &strEmbaralhada);
+  vetorToString(atual->tam, stringZona, &strEmbaralhada);
+  //Coloca na struct
+  atual->stringEmbaralhada = stringZona;
   /* FINAL SETUP */
 
+  //Pega o tempo que o cliente entrou na loja
   gettimeofday(&tempoIncio, NULL);
 
+  //Enquanto ele não for atendido, vai ficar no loop tentando
   while(!atendido){
 
+    //Região crítica
+    pthread_mutex_lock(&sem_exc_aces1);
+    //Ve quantas pessoas tem esperando
     sem_getvalue(&sem_customers,&waiting);
 
+    //Se tiver menos que o número de cadeiras permite
     if(waiting < num_chairs){
 
+      //Coloca as informações na fila
+      insereEmb(&filaMensagem, atual);
+      //Libera região crítica
+      pthread_mutex_unlock(&sem_exc_aces1);
+      //Aumenta o numero de customers esperando
       sem_post(&sem_customers);
+      //Espera ter um barbeiro livre
       sem_wait(&sem_barber);
-      //TRAVAR AQUI PARA ORDENACAO
-
-      apreciate_hair(i, whichBarber, tempoIncio);
+      //Acessa 2 região crítica
+      pthread_mutex_lock(&sem_exc_aces2);
+      //Retira a struct certa da lista de prontos
+      retiraListaPronto(&prontaMensagem, final, i);
+      //Libera acesso 2 regiao crítica
+      pthread_mutex_unlock(&sem_exc_aces2);
+      //Aprecia cabelo
+      apreciate_hair(i, tempoIncio, atual, final);
+      //Aumenta a quantidade de pessoas atendidas
       left++;
+      //Foi atendido
       atendido = 1;
 
     } else {
-
-      //printf("Cliente %i saindo para sorvete\n", i);
+      //Libera região crítica
+      pthread_mutex_unlock(&sem_exc_aces1);
+      //Sai pra tomar sorvete
       usleep(50);
     }
   } // Fim do while Atendido
 
+  //Sai da thread
   pthread_exit(NULL);
 }
 
 //Procedimento para cortar o cabelo
-void cut_hair(int num){
-  //TRAVAR PARA ORDENAR
-  //printf("%d Cortando cabelo\n", num);
+void cut_hair(int num, struct mensChair *notReady, struct mensAfter *ready){
+  /* ORDENAR A STRING DA NOTREADY E COLOCAR NA READY */
+  char stringZona[MAXSIZEVECTOR];
+  char stringBack[MAXSIZEVECTOR];
+
+  stringToVetor(notReady->stringEmbaralhada, stringZona);
+  qsort((void *)notReady->stringEmbaralhada, notReady->tam, sizeof(notReady->stringEmbaralhada[0]), comparator());
+  vetorToString(notReady->tam, stringBack, notReady->stringEmbaralhada);
+
+  ready->stringPronta = stringBack;
   usleep(500);
 }
 
 //Procedimento para apreciar o cabelo
-void apreciate_hair(int num, int numBarbeiro, struct timeval tempoIncio){
+void apreciate_hair(int num, struct timeval tempoIncio, struct mensChair *structVelha, struct mensAfter *structNova){
   struct timeval tempoFim;
   double tempoAtendimento;
   gettimeofday(&tempoFim, NULL);
 
   tempoAtendimento = tempoFim.tv_sec - tempoIncio.tv_sec;
   tempoAtendimento += (tempoFim.tv_usec - tempoIncio.tv_usec)/(float)1000;
-  printf("Cliente %i\t\tBarbeiro %d\t\tTemp - %lf (ms)\n", num, numBarbeiro, tempoAtendimento);
+  /* PEGAR STRING ANTIGA, STRING NOVA, TEMPO QUE DEMOROU E QUAL BARBEIRO QUE CORTOU O CABELO */
+  printf("Tempo de atendimento : %lf\t-\tString embaralhada : %s\t-\tString pronta : %s\t-\tCliente : %d\t-\tBarbeiro : %d\n", tempoAtendimento, structVelha->stringEmbaralhada, structNova->stringPronta, structNova->numCliente, structNova->numBarber);
 }
 
 void criaVaziaEmb(struct mensChair **ponteiro){
   *ponteiro = NULL;
 }
-int insereEmb(struct mensChair **source, struct mensChair *novo){
+void insereEmb(struct mensChair **source, struct mensChair *novo){
   //Struct auxiliar
   mensChair *aux;
-  //Contador de quantos elementos tem na lista
-  count = 1;
 
   //Caso exista o 1 elemento da lista
   if(*source){
@@ -241,32 +318,23 @@ int insereEmb(struct mensChair **source, struct mensChair *novo){
     while(aux->prox){
       //Anda
       aux = aux->prox;
-      //Contador ++
-      count++;
     }
-    //Se tiver menos elementos que o numero de cadeiras, adiciona
-    if(count < num_chairs){
-      aux->prox = novo;
-      return 1;
-    } else {
-      //Se não, vai ficar esperando
-      return 0;
-    }
+
+  aux->prox = novo;
+
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = novo;
-    return = 1;
+    return 1;
   }
 
 }
 void criaVaziaOrd(struct mensAfter **ponteiro){
   *ponteiro = NULL;
 }
-int insereOrd(stuct mensAfter **source, struct mensAfter *new){
+void insereOrd(struct mensAfter **source, struct mensAfter *new){
   //Struct auxiliar
-  mensAfter *aux;
-  //Contador de quantos elementos tem na lista
-  count = 1;
+  struct mensAfter *aux;
 
   //Caso exista o 1 elemento da lista
   if(*source){
@@ -276,20 +344,100 @@ int insereOrd(stuct mensAfter **source, struct mensAfter *new){
     while(aux->prox){
       //Anda
       aux = aux->prox;
-      //Contador ++
-      count++;
     }
     //Se tiver menos elementos que o numero de barbeiros, adiciona
-    if(count < num_barbers){
-      aux->prox = new;
-      return 1;
-    } else {
-      //Se não, vai ficar esperando
-      return 0;
-    }
+    aux->prox = new;
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = new;
-    return = 1;
+    return 1;
   }
+}
+
+void retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente){
+  //Struct auxiliares
+  struct mensAfter *aux, *remover;
+  //Primeiro ponteiro
+  aux = *source;
+
+  //Se o primeiro elemento for o correto
+  if(aux->numCliente == numeroCliente){
+    //Salvo ele
+    structCliente = aux;
+    //O começo da lista é o elemento 2
+    *source = aux->prox;
+    //Libero espaço
+    free(aux);
+  }
+  else {
+    //Enquanto não for o final da fila -- VAI DAR MERDA
+    while(aux != NULL){
+      //Se o proximo elemento for o correto
+      if(((aux->prox)->numCliente) == numeroCliente){
+        //Pega o elemento
+        remover = (aux->prox);
+        //Pula ele (anterior aponta pro proximo)
+        aux->prox = remover->prox;
+        //Salva o elemento
+        structCliente = remover;
+        //Libera espaço
+        free(remover);
+        break;
+      }
+      //Anda a lista
+      aux = aux->prox;
+    }
+  }
+}
+
+void vetorAleatorio(int tam, int *vetor){
+    time_t t;
+   int tamString = 0;
+
+   srand((unsigned) time(&t));
+   for(int x = 0; x < tam; x++){
+       vetor[x] = (rand() % 1022) + 2;
+   }
+}
+void vetorToString (int tam, char * stringRet, int* vetor){
+
+    int strControl = 0;
+    for(int x = 0; x < tam; x++){
+        int num = vetor[x];
+        if(strControl != 0){
+            stringRet[strControl] = ' ';
+            strControl++;
+        }
+        int divi;
+        for (divi = 1; divi <= num; divi *= 10);
+        do
+        {
+        divi /= 10;
+        stringRet[strControl] = (num / divi) + '0';
+        strControl++;
+        num %= divi;
+        } while (divi > 1);
+    }
+    stringRet[strControl] = '\0';
+}
+void stringToVetor(int *vetor, char* string){
+    char delim[2] = " ";
+    char *token;
+    int vetorControl = 0;
+    char stringDestroy[MAXSIZEVECTOR];
+
+    strcpy(stringDestroy, string);
+
+    token = strtok(stringDestroy, delim);
+    while(token != NULL){
+        vetor[vetorControl] = atoi(token);
+        vetorControl++;
+        token = strtok(NULL, delim);
+    }
+}
+int comparator(const void *p, const void *q){
+	int l = *(const int *)p;
+	int r = *(const int *)q;
+    if(l>r) return 1;
+    return -1;
 }
