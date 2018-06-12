@@ -62,7 +62,7 @@ int comparator(const void *p, const void *q){
 // }
 
 int main(){
-    int tam = 30;
+    int tam = 1024;
     int vetor[tam];
     int vetor2[tam];
     char stringZona[MAXSIZEVECTOR];

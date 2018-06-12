@@ -24,10 +24,8 @@
 #define MESSAGE_MTYPE 1
 #define MICRO_PER_SECOND 1000000
 
-int clientesNaoAtendidos = 0;
-
 int shmid;
-int semid;
+int semid, semid2;
 struct sembuf	g_sem_op1[1];
 struct sembuf	g_sem_op2[1];
 int horaDeTrabalho = 1;
@@ -51,7 +49,7 @@ typedef struct {
 	char mtext[8192];
 } msgbuf_t;
 
-int s, m, q1, q2; // For sig_handler ipcClear
+int s1, s2, m, q1, q2; // For sig_handler ipcClear
 
 //Declaracao das funcoes
 void barber(int idMsgBarber, int idMsgCustomer);
@@ -62,6 +60,7 @@ void stringToVetor(int *vetor, char* string);
 int comparator(const void *p, const void *q);
 void aprraiseHair(struct timeval init, struct timeval end, char *cabeloBaguncado, char *cabeloArrumado, pid_t barberPID, pid_t clientPID);
 void ipcClear();
+void horaDeTrabalhoOver();
 
 int main(int argc, char *argv[]){
     // Shared memory creation
@@ -84,6 +83,7 @@ int main(int argc, char *argv[]){
     // Fim memoria compartilhada em main
     //Semaforos creation
     key_t semkey = SEM_KEY;
+    key_t semkey2 = ftok("filename", 65);
     //Criando operações
     g_sem_op1[0].sem_num  =  0;
 	g_sem_op1[0].sem_op   = -1;
@@ -98,15 +98,40 @@ int main(int argc, char *argv[]){
         perror("Impossivel criar semaforo");
         exit(1);
     }
-    s = semid;
+    s1 = semid;
+    if((semid2 = semget(semkey2, 1, IPC_CREAT | 0666)) == -1){
+        perror("Impossivel criar semaforo");
+        exit(1);
+    }
+    s2 = semid2;
     //Testando as operacoes
+    // Liberacao
+        if(semop(semid, g_sem_op2, 1) == -1){
+        perror("Impossivel inicializar semaforo");
+        exit(1);
+    }
     // Bloqueio
-    if(semop(semid, g_sem_op2, 1) == -1){
+    if(semop(semid, g_sem_op1, 1) == -1){
         perror("Impossivel inicializar semaforo");
         exit(1);
     }
     // Liberacao
-        if(semop(semid, g_sem_op1, 1) == -1){
+        if(semop(semid, g_sem_op2, 1) == -1){
+        perror("Impossivel inicializar semaforo");
+        exit(1);
+    }
+    // Liberacao
+        if(semop(semid2, g_sem_op2, 1) == -1){
+        perror("Impossivel inicializar semaforo");
+        exit(1);
+    }
+    // Bloqueio
+    if(semop(semid2, g_sem_op1, 1) == -1){
+        perror("Impossivel inicializar semaforo");
+        exit(1);
+    }
+    // Liberacao
+        if(semop(semid2, g_sem_op2, 1) == -1){
         perror("Impossivel inicializar semaforo");
         exit(1);
     }
@@ -125,27 +150,6 @@ int main(int argc, char *argv[]){
         exit(1);
     }
     q2 = idMsgCustomer;
-    // Aterando tamanho das filas
-    struct msqid_ds buf1;
-    if (msgctl(idMsgBarber, IPC_STAT, &buf1) == -1){
-        perror("Nao foi possivel alterar fila de msg");
-        exit(1);
-    }
-    struct msqid_ds buf2;
-    if (msgctl(idMsgCustomer, IPC_STAT, &buf2) == -1){
-        perror("Nao foi possivel alterar fila de msg");
-        exit(1);
-    }
-    buf1.msg_qbytes = 8300;
-    buf2.msg_qbytes = 8300;
-    if (msgctl(idMsgBarber, IPC_SET, &buf1) == -1){
-        perror("Nao foi possivel alterar fila de msg");
-        exit(1);
-    }
-    if (msgctl(idMsgCustomer, IPC_SET, &buf2) == -1){
-        perror("Nao foi possivel alterar fila de msg");
-        exit(1);
-    }
     // Todos IPCs Criados ---------------------------------------------------
     pid_t pidsClientes[NO_OF_CLIENTS];
     pid_t pidsBarbers[NO_OF_BARBERS];
@@ -178,11 +182,12 @@ int main(int argc, char *argv[]){
     }
     //Esperando filhos
     for(int i = 0; i < NO_OF_CLIENTS; i++){
-        waitpid(pidsClientes[i], NULL, 0);
+        wait(NULL);
     }
     horaDeTrabalho = 0;
     for(int i = 0; i < NO_OF_BARBERS; i++){
-        kill(pidsBarbers[i], SIGINT);
+        kill(pidsBarbers[i], SIGUSR1);
+        wait(NULL);
     }
     //Finalizado IPCs -------------------------------------------------------
     ipcClear();
@@ -194,38 +199,35 @@ void barber(int idMsgBarber, int idMsgCustomer){
     msgbuf_t msgBufferRec;
     t_msgToBarber *msgRec = (t_msgToBarber *)(msgBufferRec.mtext);
     t_msgToClient *msgEnv = (t_msgToClient *)(msgBufferEnv.mtext);
-    int vetor[MAXSIZEVECTOR];
     char cabelo[MAXSIZEVECTOR*5];
     int *seatWR;
 
     sleep(1);
-
+    signal(SIGUSR1, horaDeTrabalhoOver);
     if((seatWR = (int*)shmat(shmid, NULL, 0)) == (void*)-1){
         perror("Impossivel acessar SHM");
         exit(1);
     }
     // loop
+    // Receber Menssages
     while(horaDeTrabalho){
-        // Receber Menssagem
-        if(msgrcv(idMsgBarber, (struct msgbuf_t *)&msgBufferRec, sizeof(t_msgToBarber), MESSAGE_MTYPE, 0) == -1){
-            perror("Erro ao receber menssagem @ barber");
-            exit(1);
+        while(msgrcv(idMsgBarber, (struct msgbuf_t *)&msgBufferRec, sizeof(t_msgToBarber), MESSAGE_MTYPE, IPC_NOWAIT) == -1){
+            if (horaDeTrabalho == 0) break;
         }
-        printf("menssagem recebida\n String = %s\n Pid = %d\n TamString = %d\n", msgRec->stringEmbaralhada, msgRec->pidCliente, msgRec->tamString);
         // Arrumando Cabelo
         strcpy(cabelo, msgRec->stringEmbaralhada);
+        int vetor[msgRec->tamString];
         stringToVetor(vetor, cabelo);
-        qsort((void*)vetor,sizeof(vetor), sizeof(vetor[0]), comparator);
+        int sizeVetor = sizeof(vetor)/sizeof(vetor[0]);
+        qsort((void*)vetor,sizeVetor, sizeof(vetor[0]), comparator);
         vetorToString(msgRec->tamString, cabelo, vetor);
-        printf("cabelo tratado\n");
         // Devolver cabelo pro cliente
         msgBufferEnv.mtype = MESSAGE_MTYPE;
         msgEnv->pidBarber = getpid();
         strcpy(msgEnv->stringOrganizada, cabelo);
         msgEnv->tamString = msgRec->tamString;
         
-        printf("Mandando msg\n");
-        size_t sizeMsgClient = sizeof(msgEnv);
+        size_t sizeMsgClient = sizeof(* msgEnv);
         if(msgsnd(idMsgCustomer, (struct msgbuf_t *)&msgBufferEnv, sizeMsgClient, 0) == -1){
             perror("Erro ao enviar mensagem @ Barber");
             exit(1);
@@ -259,17 +261,16 @@ void cliente(int tam, int idMsgBarber, int idMsgCustomer){
     char cabeloArrumado[tam*5];
     int vetor[tam];
     int *seatWR;
+    pid_t myPid = getpid();
     vetorAleatorio(tam, vetor);
     vetorToString(tam, cabeloBaguncado, vetor);
     sleep(2);
     gettimeofday(&timeInit, NULL);
-    // printf("alteracao em semaforos\n");
     // Verificar se barbeiro disponivel e cadeira na sala de espera
-    if(semop(semid, g_sem_op2, 1) == -1){
+    if(semop(semid, g_sem_op1, 1) == -1){
         perror("Erro em fechar semaforo");
         exit(1);
     }
-    // printf("Regiao critica, tentar usar SHM\n");
     // Regiao Critica
     if((seatWR = (int*)shmat(shmid, NULL, 0)) == (void*)-1){
         perror("Impossivel acessar SHM");
@@ -277,7 +278,15 @@ void cliente(int tam, int idMsgBarber, int idMsgCustomer){
     }
     // se nao houver assentos cliente vai embora
     if(*seatWR == 0){
-        clientesNaoAtendidos++;
+        if(semop(semid2, g_sem_op1, 1) == -1){
+        perror("Erro em fechar semaforo");
+        exit(1);
+        }
+        printf("Cliente %d não atendido\n", myPid);
+        if(semop(semid2, g_sem_op2, 1) == -1){
+            perror("Erro em abrir semaforo");
+            exit(1);
+        }
         if(semop(semid, g_sem_op2, 1) == -1){
             perror("Erro em abrir semaforo");
         }
@@ -285,22 +294,18 @@ void cliente(int tam, int idMsgBarber, int idMsgCustomer){
     }
     // se houver ocupa o lugar e continua
     *seatWR = *seatWR - 1;
-    // printf("Regiao critica, usou SHM, seatWR = %d\n", *seatWR);
-    if(semop(semid, g_sem_op1, 1) == -1){
+    if(semop(semid, g_sem_op2, 1) == -1){
             perror("Erro em abrir semaforo");
             exit(1);
     }
-    // printf("Sai do semaforo, comeca enviar msg\n");
     // envio a lista de mensagens
     // Insercao na lista de mensagem
-    pid_t myPid = getpid();
     msgBufferEnv.mtype = MESSAGE_MTYPE;
     msgEnv->tamString = tam;
     msgEnv->pidCliente = myPid;
     strcpy((msgEnv->stringEmbaralhada), cabeloBaguncado);
     size_t sizeMsgSend = sizeof(*msgEnv);
     if(msgsnd(idMsgBarber,(struct msgbuf_t *)&msgBufferEnv, sizeMsgSend, 0) == -1){
-        if(errno == EINVAL) printf("YEAP");
         perror("Impossivel mandar mensagem @ client");
         exit(1);
     }
@@ -313,14 +318,19 @@ void cliente(int tam, int idMsgBarber, int idMsgCustomer){
     gettimeofday(&timeFim, NULL);
     strcpy(cabeloArrumado, msgRec->stringOrganizada);
     // Avaliado corte
+    if(semop(semid2, g_sem_op1, 1) == -1){
+        perror("Erro em fechar semaforo");
+        exit(1);
+    }
     aprraiseHair(timeInit, timeFim, cabeloBaguncado, cabeloArrumado, msgRec->pidBarber, myPid);
+    if(semop(semid2, g_sem_op2, 1) == -1){
+            perror("Erro em abrir semaforo");
+            exit(1);
+    }
     exit(0);
 }
 void vetorAleatorio(int tam, int *vetor){
-    time_t t;
    int tamString = 0;
-
-   srand((unsigned) time(&t));
    for(int x = 0; x < tam; x++){
        vetor[x] = (rand() % 1022) + 2;
    }
@@ -368,11 +378,12 @@ int comparator(const void *p, const void *q){
     return -1;
 }
 void aprraiseHair(struct timeval init, struct timeval end, char *cabeloBaguncado, char *cabeloArrumado, pid_t barberPID, pid_t clientPID){
-    int tempoTotal;
-    tempoTotal = end.tv_sec - init.tv_sec;
-    tempoTotal += (end.tv_usec - init.tv_usec)/(float)MICRO_PER_SECOND;
-    printf("Cabelo Desarrumado : %s\nCabelo Arrumado : %s\nTempo: %d\nBarbeiro: %d, Cliente: %d\n", cabeloBaguncado, cabeloArrumado, tempoTotal, barberPID, clientPID);
-
+    long int tempoTotal;
+    tempoTotal = (end.tv_sec - init.tv_sec) * MICRO_PER_SECOND;
+    tempoTotal += end.tv_usec - init.tv_usec;
+    printf("------------------------------------------------------------------------------------\n");
+    printf("Cliente Atendido\nTempo: %li\nBarbeiro: %d, Cliente: %d\n",tempoTotal, barberPID, clientPID);
+    printf("------------------------------------------------------------------------------------\n");
     return;
 }
 void ipcClear(){
@@ -382,7 +393,11 @@ void ipcClear(){
         exit(1);
     }
     // Removing Semaphore
-    if(semctl(s, 0, IPC_RMID, 0) != 0){
+    if(semctl(s1, 0, IPC_RMID, 0) != 0){
+        perror("Erro em destruir SEM");
+        exit(1);
+    }
+    if(semctl(s2, 0, IPC_RMID, 0) != 0){
         perror("Erro em destruir SEM");
         exit(1);
     }
@@ -395,4 +410,7 @@ void ipcClear(){
         perror("Erro em destruir msgCustomer");
         exit(1);
     }
+}
+void horaDeTrabalhoOver(){
+    horaDeTrabalho = 0;
 }
