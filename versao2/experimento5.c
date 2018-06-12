@@ -46,7 +46,7 @@ typedef struct mensChair{
 } mensChair;
 
 typedef struct mensAfter{
-  char* stringPronta;
+  char *stringPronta;
   int numBarber;
   int numCliente;
   struct mensAfter *prox;
@@ -70,7 +70,7 @@ void criaVaziaEmb(struct mensChair **ponteiro);
 void insereEmb(struct mensChair **source, struct mensChair *novo);
 void criaVaziaOrd(struct mensAfter **ponteiro);
 void insereOrd(struct mensAfter **source, struct mensAfter *new);
-void retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente);
+int retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente);
 // Prototipos para a srting
 void vetorAleatorio(int tam, int *vetor);
 void vetorToString (int tam, char *stringRet, int* vetor);
@@ -204,7 +204,8 @@ void *barberThread(void *arg){
 
 //Procedimento que as threads Clientes irão executar
 void *clientThread(void *arg){
-  //char stringZona[MAXSIZEVECTOR];
+  //Status para ver se ele tirou ou nao da filaM
+  int retirado = 0;
   //Numero do cliente
   int i = *(int *)arg;
   //Condição para LOOP
@@ -259,11 +260,14 @@ void *clientThread(void *arg){
       //Espera ter um barbeiro livre
       sem_wait(&sem_barber);
       //Acessa 2 região crítica
-      pthread_mutex_lock(&sem_exc_aces2);
-      //Retira a struct certa da lista de prontos
-      retiraListaPronto(&prontaMensagem, final, i);
-      //Libera acesso 2 regiao crítica
-      pthread_mutex_unlock(&sem_exc_aces2);
+      while(!retirado){
+        while(!pthread_mutex_trylock(&sem_exc_aces2){
+          //Retira a struct certa da lista de prontos
+          retirado = retiraListaPronto(&prontaMensagem, final, i);
+          //Libera acesso 2 regiao crítica
+          pthread_mutex_unlock(&sem_exc_aces2);
+        }
+      }
       //Aprecia cabelo
       apreciate_hair(i, tempoIncio, atual, final);
       //Aumenta a quantidade de pessoas atendidas
@@ -360,7 +364,8 @@ void insereOrd(struct mensAfter **source, struct mensAfter *new){
   }
 }
 
-void retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente){
+int retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente){
+  int status = 0;
   //Struct auxiliares
   struct mensAfter *aux, *remover;
   //Primeiro ponteiro
@@ -374,6 +379,9 @@ void retiraListaPronto(struct mensAfter **source, struct mensAfter *structClient
     *source = aux->prox;
     //Libero espaço
     free(aux);
+    //Voltou com sucesso
+    status = 1;
+    return status;
   }
   else {
     //Enquanto não for o final da fila -- VAI DAR MERDA
@@ -388,12 +396,16 @@ void retiraListaPronto(struct mensAfter **source, struct mensAfter *structClient
         structCliente = remover;
         //Libera espaço
         free(remover);
-        break;
+        //Voltará sucesso
+        status = 1;
+        return status;
       }
       //Anda a lista
       aux = aux->prox;
     }
   }
+
+  return 0;
 }
 
 void vetorAleatorio(int tam, int *vetor){
