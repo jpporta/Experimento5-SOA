@@ -261,12 +261,12 @@ void *clientThread(void *arg){
       sem_wait(&sem_barber);
       //Acessa 2 região crítica
       while(!retirado){
-        while(!pthread_mutex_trylock(&sem_exc_aces2){
-          //Retira a struct certa da lista de prontos
-          retirado = retiraListaPronto(&prontaMensagem, final, i);
-          //Libera acesso 2 regiao crítica
-          pthread_mutex_unlock(&sem_exc_aces2);
-        }
+        pthread_mutex_lock(&sem_exc_aces2)
+        //Retira a struct certa da lista de prontos
+        retirado = retiraListaPronto(&prontaMensagem, final, i);
+        //Libera acesso 2 regiao crítica
+        pthread_mutex_unlock(&sem_exc_aces2);
+
       }
       //Aprecia cabelo
       apreciate_hair(i, tempoIncio, atual, final);
