@@ -39,7 +39,7 @@ sem_t sem_customers;
 sem_t sem_barber;
 
 typedef struct mensChair{
-  char* stringEmbaralhada;
+  char *stringEmbaralhada;
   int numCliente;
   unsigned int tam;
   struct mensChair *prox;
@@ -226,9 +226,14 @@ void *clientThread(void *arg){
   //Gera a string aleatoria
   //getRandomString(&strEmbaralhada,atual->tam);
   vetorAleatorio(atual->tam, vetEmbaralhado);
+  /*for (int z = 0; z < atual->tam; z++) {
+    printf("%d ", vetEmbaralhado[z]);
+  }*/
+  //printf("\n");
   vetorToString(atual->tam, strEmbaralhada, vetEmbaralhado);
+  //printf("STRING -> %s\n", strEmbaralhada);
   //Coloca na struct
-  strcpy(atual->stringEmbaralhada, strEmbaralhada);
+  atual->stringEmbaralhada = strEmbaralhada;
   /* FINAL SETUP */
 
   //Pega o tempo que o cliente entrou na loja
@@ -393,7 +398,7 @@ void retiraListaPronto(struct mensAfter **source, struct mensAfter *structClient
 
 void vetorAleatorio(int tam, int *vetor){
     time_t t;
-   //int tamString = 0;
+   // int tamString = 0;
 
    srand((unsigned) time(&t));
    for(int x = 0; x < tam; x++){
