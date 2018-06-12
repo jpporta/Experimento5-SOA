@@ -261,7 +261,7 @@ void *clientThread(void *arg){
       sem_wait(&sem_barber);
       //Acessa 2 região crítica
       while(!retirado){
-        pthread_mutex_lock(&sem_exc_aces2)
+        pthread_mutex_lock(&sem_exc_aces2);
         //Retira a struct certa da lista de prontos
         retirado = retiraListaPronto(&prontaMensagem, final, i);
         //Libera acesso 2 regiao crítica
