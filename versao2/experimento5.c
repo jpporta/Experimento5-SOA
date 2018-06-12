@@ -204,7 +204,7 @@ void *barberThread(void *arg){
 
 //Procedimento que as threads Clientes irão executar
 void *clientThread(void *arg){
-  char stringZona[MAXSIZEVECTOR];
+  //char stringZona[MAXSIZEVECTOR];
   //Numero do cliente
   int i = *(int *)arg;
   //Condição para LOOP
@@ -222,12 +222,13 @@ void *clientThread(void *arg){
   atual->numCliente = i;
   //Declara a string embaralhada e ordenada
   char strEmbaralhada[atual->tam];
+  int vetEmbaralhado[atual->tam];
   //Gera a string aleatoria
   //getRandomString(&strEmbaralhada,atual->tam);
-  vetorAleatorio(atual->tam, &strEmbaralhada);
-  vetorToString(atual->tam, stringZona, &strEmbaralhada);
+  vetorAleatorio(atual->tam, vetEmbaralhado);
+  vetorToString(atual->tam, strEmbaralhada, vetEmbaralhado);
   //Coloca na struct
-  atual->stringEmbaralhada = stringZona;
+  strcpy(atual->stringEmbaralhada, strEmbaralhada);
   /* FINAL SETUP */
 
   //Pega o tempo que o cliente entrou na loja
@@ -280,14 +281,14 @@ void *clientThread(void *arg){
 //Procedimento para cortar o cabelo
 void cut_hair(int num, struct mensChair *notReady, struct mensAfter *ready){
   /* ORDENAR A STRING DA NOTREADY E COLOCAR NA READY */
-  char stringZona[MAXSIZEVECTOR];
-  char stringBack[MAXSIZEVECTOR];
+  //char stringZona[MAXSIZEVECTOR];
+  //char stringBack[MAXSIZEVECTOR];
+  int vet[notReady->tam];
 
-  stringToVetor(notReady->stringEmbaralhada, stringZona);
-  qsort((void *)notReady->stringEmbaralhada, notReady->tam, sizeof(notReady->stringEmbaralhada[0]), comparator());
-  vetorToString(notReady->tam, stringBack, notReady->stringEmbaralhada);
+  stringToVetor(vet, notReady->stringEmbaralhada);
+  qsort((void *)notReady->stringEmbaralhada, notReady->tam, sizeof(notReady->stringEmbaralhada[0]), comparator);
+  vetorToString(notReady->tam, ready->stringPronta, vet);
 
-  ready->stringPronta = stringBack;
   usleep(500);
 }
 
@@ -325,7 +326,7 @@ void insereEmb(struct mensChair **source, struct mensChair *novo){
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = novo;
-    return 1;
+    //return 1;
   }
 
 }
@@ -350,7 +351,7 @@ void insereOrd(struct mensAfter **source, struct mensAfter *new){
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = new;
-    return 1;
+    //return 1;
   }
 }
 
@@ -392,7 +393,7 @@ void retiraListaPronto(struct mensAfter **source, struct mensAfter *structClient
 
 void vetorAleatorio(int tam, int *vetor){
     time_t t;
-   int tamString = 0;
+   //int tamString = 0;
 
    srand((unsigned) time(&t));
    for(int x = 0; x < tam; x++){
