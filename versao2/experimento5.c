@@ -66,16 +66,19 @@ void apreciate_hair(int num, struct timeval tempoIncio, struct mensChair *struct
 void *barberThread(void *arg);
 void *clientThread(void *arg);
 /* Protótipos para manipulação de lista ligada */
+int removek(int posicao, struct mensAfter **source);
 void criaVaziaEmb(struct mensChair **ponteiro);
 void insereEmb(struct mensChair **source, struct mensChair *novo);
 void criaVaziaOrd(struct mensAfter **ponteiro);
 void insereOrd(struct mensAfter **source, struct mensAfter *new);
 int retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente);
+int acharPos(struct mensAfter **source, int ValorNumCliente);
 // Prototipos para a srting
 void vetorAleatorio(int tam, int *vetor);
 void vetorToString (int tam, char *stringRet, int* vetor);
 void stringToVetor(int *vetor, char* string);
 int comparator(const void *p, const void *q);
+void listaDeProntos(struct mensAfter **source);
 
 
 
@@ -144,19 +147,22 @@ int main(){
     }
   }
 
-  //Destruindo MUTEX
+  //Destruindo MUTEX para primeira região crítica (lista ligada das strings embaralhadas)
   if(pthread_mutex_destroy(&sem_exc_aces1)){
     fprintf(stderr, "Erro ao tentar destruir mutex exc_aces1\n");
     return -1;
   }
+  //Destruindo MUTEX para segunda região crítica (lista ligada das strings ordenadas)
   if(pthread_mutex_destroy(&sem_exc_aces2)){
     fprintf(stderr, "Erro ao tentar destruir mutex exc_aces2\n");
     return -1;
   }
+  //Destruindo semáforo dos clientes
   if(sem_destroy(&sem_customers)){
     fprintf(stderr, "Erro ao tentar destruir semaphore customers\n");
     return -1;
   }
+  //Destruindo semáforo dos barbeiros
   if(sem_destroy(&sem_barber)){
     fprintf(stderr, "Erro ao tentar destruir semaphore barber\n");
     return -1;
@@ -212,29 +218,33 @@ void *clientThread(void *arg){
   int atendido = 0;
   //Para cálculo de tempo
   struct timeval tempoIncio;
-  /* Setando struct para tirar da lista 2 */
-  struct mensAfter *final = (struct mensAfter *)malloc(sizeof(struct mensAfter));
+
   /* SETANDO STRUCT PARA COLOCAR NA LISTA */
+
   //Aloca struct
   struct mensChair *atual = (struct mensChair *)malloc(sizeof(struct mensChair));
   //O tamanho aleatorio da string
   atual->tam = ((rand() % 1021) + 2);
   //Passa o numero do cliente
   atual->numCliente = i;
-  //Declara a string embaralhada e ordenada
+  //Declara a string embaralhada
   char strEmbaralhada[atual->tam];
+  //Tamanho da string embaralhada (parra dar malloc)
+  int tamanhoDaStringEmbaralhada = sizeof(char) * atual->tam;
+  //Alocando a string embaralhada (dentro da struct)
+  //atual->stringEmbaralhada = malloc(tamanhoDaStringEmbaralhada);
+  //Criando vetor de números aleatórios
   int vetEmbaralhado[atual->tam];
-  //Gera a string aleatoria
-  //getRandomString(&strEmbaralhada,atual->tam);
-  vetorAleatorio(atual->tam, vetEmbaralhado);
-  /*for (int z = 0; z < atual->tam; z++) {
-    printf("%d ", vetEmbaralhado[z]);
-  }*/
-  //printf("\n");
-  vetorToString(atual->tam, strEmbaralhada, vetEmbaralhado);
-  //printf("STRING -> %s\n", strEmbaralhada);
-  //Coloca na struct
-  atual->stringEmbaralhada = strEmbaralhada;
+  //Gera a vetor aleatório
+  //vetorAleatorio(atual->tam, vetEmbaralhado);
+  //Transformando em string e colocando na struct
+  //vetorToString(atual->tam, atual->stringEmbaralhada, vetEmbaralhado);
+
+  /* SETANDO STRUCT PARA RETIRAR DA FILA DE PRONTOS*/
+
+  //Aloca a struct ordenada
+  struct mensAfter *final = (struct mensAfter *)malloc(sizeof(struct mensAfter));
+
   /* FINAL SETUP */
 
   //Pega o tempo que o cliente entrou na loja
@@ -259,11 +269,14 @@ void *clientThread(void *arg){
       sem_post(&sem_customers);
       //Espera ter um barbeiro livre
       sem_wait(&sem_barber);
-      //Acessa 2 região crítica
+      //listaDeProntos(&prontaMensagem);
+      //Enquanto não for retirado
       while(!retirado){
+        //Acessa 2 região crítica
         pthread_mutex_lock(&sem_exc_aces2);
         //Retira a struct certa da lista de prontos
-        retirado = retiraListaPronto(&prontaMensagem, final, i);
+        retirado = removek(acharPos(&prontaMensagem, i), &prontaMensagem);
+        //retirado = retiraListaPronto(&prontaMensagem, final, i);
         //Libera acesso 2 regiao crítica
         pthread_mutex_unlock(&sem_exc_aces2);
 
@@ -287,38 +300,48 @@ void *clientThread(void *arg){
   pthread_exit(NULL);
 }
 
-//Procedimento para cortar o cabelo
+//Procedimento para cortar o cabelo ---------------------------------------------------------------------------------------------ARRUMAR
 void cut_hair(int num, struct mensChair *notReady, struct mensAfter *ready){
   /* ORDENAR A STRING DA NOTREADY E COLOCAR NA READY */
   //char stringZona[MAXSIZEVECTOR];
   //char stringBack[MAXSIZEVECTOR];
-  int vet[notReady->tam];
-
-  stringToVetor(vet, notReady->stringEmbaralhada);
-  qsort((void *)notReady->stringEmbaralhada, notReady->tam, sizeof(notReady->stringEmbaralhada[0]), comparator);
-  vetorToString(notReady->tam, ready->stringPronta, vet);
-
+  //int vet[notReady->tam];
+  //printf("%s\n", notReady->stringEmbaralhada);
+  //stringToVetor(vet, notReady->stringEmbaralhada);
+  /*for (int z = 0; z < notReady->tam; z++) {
+    printf("%d ", vet[z]);
+  }*/
+  //qsort((void *)notReady->stringEmbaralhada, notReady->tam, sizeof(notReady->stringEmbaralhada[0]), comparator);
+  //vetorToString(notReady->tam, ready->stringPronta, vet);
+  ready->numBarber = num;
+  ready->numCliente = notReady->numCliente;
   usleep(500);
 }
 
 //Procedimento para apreciar o cabelo
 void apreciate_hair(int num, struct timeval tempoIncio, struct mensChair *structVelha, struct mensAfter *structNova){
+  //Variáveis para cálculo do tempo
   struct timeval tempoFim;
   double tempoAtendimento;
   gettimeofday(&tempoFim, NULL);
 
+  //Calcula o tempo que ele rodou no total
   tempoAtendimento = tempoFim.tv_sec - tempoIncio.tv_sec;
   tempoAtendimento += (tempoFim.tv_usec - tempoIncio.tv_usec)/(float)1000;
-  /* PEGAR STRING ANTIGA, STRING NOVA, TEMPO QUE DEMOROU E QUAL BARBEIRO QUE CORTOU O CABELO */
+
+  //Printa as informações pedidas (tempo de atendimento, string antes de ser ordenada, string depois de ser ordenada, qual o cliente que solicitou e qual barbeiro respondeu)
   printf("Tempo de atendimento : %lf\t-\tString embaralhada : %s\t-\tString pronta : %s\t-\tCliente : %d\t-\tBarbeiro : %d\n", tempoAtendimento, structVelha->stringEmbaralhada, structNova->stringPronta, structNova->numCliente, structNova->numBarber);
 }
 
+//Procedimento para inicializar a lista ligada das strings embaralhadas
 void criaVaziaEmb(struct mensChair **ponteiro){
   *ponteiro = NULL;
 }
+
+//Insere no final da lista ligada das strings embaralhadas
 void insereEmb(struct mensChair **source, struct mensChair *novo){
   //Struct auxiliar
-  mensChair *aux;
+  struct mensChair *aux;
 
   //Caso exista o 1 elemento da lista
   if(*source){
@@ -331,17 +354,22 @@ void insereEmb(struct mensChair **source, struct mensChair *novo){
     }
 
   aux->prox = novo;
+  novo->prox = NULL;
 
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = novo;
-    //return 1;
+    novo->prox = NULL;
   }
 
 }
+
+//Procedimento para inicializar a lista ligada das strings ordenadas
 void criaVaziaOrd(struct mensAfter **ponteiro){
   *ponteiro = NULL;
 }
+
+//Insere no final da lista ligada das strings ordenadas
 void insereOrd(struct mensAfter **source, struct mensAfter *new){
   //Struct auxiliar
   struct mensAfter *aux;
@@ -355,89 +383,128 @@ void insereOrd(struct mensAfter **source, struct mensAfter *new){
       //Anda
       aux = aux->prox;
     }
-    //Se tiver menos elementos que o numero de barbeiros, adiciona
+    //Adiciona no final da lista
     aux->prox = new;
+    //Ponteiro final é NULL
+    new->prox = NULL;
   } else {
     //Caso não tenha elemento, é adicionado como o primeiro elemento
     *source = new;
-    //return 1;
+    //Ponteiro final é NULL
+    new->prox = NULL;
   }
 }
 
+//Função para retirar a string de um certo cliente da lista ligada dos ordenados
+// RETURN:
+// 1 -> Achou o cliente, retirou e devolve para quem chamou a string ordenada
+// 0 -> Não encontrou o cliente
 int retiraListaPronto(struct mensAfter **source, struct mensAfter *structCliente, int numeroCliente){
-  int status = 0;
   //Struct auxiliares
   struct mensAfter *aux, *remover;
   //Primeiro ponteiro
   aux = *source;
 
-  //Se o primeiro elemento for o correto
+  //Verifica se o primeiro elemento existe
+  if(!aux){
+    return 0;
+  }
+  //Caso exista, verifica o numero do cliente dono da string
   if(aux->numCliente == numeroCliente){
     //Salvo ele
-    structCliente = aux;
+    remover = aux;
     //O começo da lista é o elemento 2
     *source = aux->prox;
+    //Salva o elemento
+    structCliente = remover;
     //Libero espaço
-    free(aux);
+    free(remover);
     //Voltou com sucesso
-    status = 1;
-    return status;
-  }
+    return 1;
+  } //Caso não exista, vai percorrer a lista
   else {
-    //Enquanto não for o final da fila -- VAI DAR MERDA
-    while(aux != NULL){
-      //Se o proximo elemento for o correto
-      if(((aux->prox)->numCliente) == numeroCliente){
-        //Pega o elemento
-        remover = (aux->prox);
-        //Pula ele (anterior aponta pro proximo)
-        aux->prox = remover->prox;
-        //Salva o elemento
-        structCliente = remover;
-        //Libera espaço
-        free(remover);
-        //Voltará sucesso
-        status = 1;
-        return status;
+      //Auxiliar para verificação
+      int numClienteTeste;
+      //Enquanto não chegar no final da lista
+      while(aux!= NULL){
+        //Pega o número do cliente dono da string atual
+        numClienteTeste = aux->numCliente;
+        //Se o elemento for o correto
+        if(numClienteTeste == numeroCliente){
+          //Pega o elemento
+          remover = (aux->prox);
+          //Pula ele (anterior aponta pro proximo)
+          aux->prox = remover->prox;
+          //Salva o elemento
+          structCliente = remover;
+          //Libera espaço
+          free(remover);
+          //Voltará sucesso
+          return 1;
+        }
+        //Anda a lista caso não entre no IF
+        aux = aux->prox;
       }
-      //Anda a lista
-      aux = aux->prox;
-    }
   }
-
+  //Caso o loop acabe, não foi encontrado na lista
   return 0;
 }
 
-void vetorAleatorio(int tam, int *vetor){
-    time_t t;
-   // int tamString = 0;
+int acharPos(struct mensAfter **source, int ValorNumCliente){
+  int count=0;
+  struct mensAfter *aux;
 
-   srand((unsigned) time(&t));
-   for(int x = 0; x < tam; x++){
-       vetor[x] = (rand() % 1022) + 2;
-   }
+  aux = *source;
+
+  while(aux != NULL){
+    if(aux->numCliente == ValorNumCliente){
+      return count;
+    }
+    aux = aux->prox;
+    count++;
+  }
+
+  return -1;
+
 }
-void vetorToString (int tam, char * stringRet, int* vetor){
 
+//Procedimento para gerar um vetor com números aleatórios entre 2 e 1024
+void vetorAleatorio(int tam, int *vetor){
+
+  for(int x = 0; x < tam; x++){
+    vetor[x] = (rand() % 1022) + 2;
+  }
+
+}
+
+//Procedimento que transforma um vetor de inteiros em uma string
+void vetorToString (int tam, char* stringRet, int* vetor){
+    char strTemp[tam];
     int strControl = 0;
+    int num;
+
     for(int x = 0; x < tam; x++){
-        int num = vetor[x];
+        num = vetor[x];
         if(strControl != 0){
-            stringRet[strControl] = ' ';
+            strTemp[strControl] = ' ';
             strControl++;
         }
         int divi;
         for (divi = 1; divi <= num; divi *= 10);
         do
         {
-        divi /= 10;
-        stringRet[strControl] = (num / divi) + '0';
-        strControl++;
-        num %= divi;
+          divi /= 10;
+          strTemp[strControl] = (num / divi) + '0';
+          strControl++;
+          num %= divi;
         } while (divi > 1);
     }
-    stringRet[strControl] = '\0';
+    strTemp[strControl] = '\0';
+
+    strcpy(stringRet,strTemp);
 }
+
+//Procedimento que transforma uma string em um vetor de inteiros
 void stringToVetor(int *vetor, char* string){
     char delim[2] = " ";
     char *token;
@@ -453,9 +520,67 @@ void stringToVetor(int *vetor, char* string){
         token = strtok(NULL, delim);
     }
 }
+
+//Função comparador
 int comparator(const void *p, const void *q){
 	int l = *(const int *)p;
 	int r = *(const int *)q;
     if(l>r) return 1;
     return -1;
+}
+
+int removek(int posicao, struct mensAfter **source){
+  struct mensAfter *aux, *remover = NULL;
+  aux = *source;
+  int count = 1;
+
+  if(posicao == -1){
+    return 0;
+  }
+
+  if(posicao == 1){
+    (*source) = (*source)->prox;
+    free(aux);
+    return 1;
+  }
+
+  else{
+
+    while(aux != NULL && count < posicao){
+
+      if((posicao-1) == count){
+
+        remover = aux->prox;
+        aux->prox = (aux->prox)->prox;
+        free(remover);
+        return 1;
+
+      }
+      else{
+
+        count++;
+
+      }
+
+      aux = aux->prox;
+    }
+
+    if(aux == NULL){
+
+      return 0;
+
+    }
+  }
+}
+
+void listaDeProntos(struct mensAfter **source){
+  struct mensAfter *aux;
+  aux = *source;
+  int count = 0;
+  while(aux != NULL){
+    printf("Numero do barbeiro -> %d\t\tNumero do cliente -> %d\n", aux->numBarber, aux->numCliente);
+    aux = aux->prox;
+    count++;
+  }
+  printf("Na lista = %d\n", count);
 }
